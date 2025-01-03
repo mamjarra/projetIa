@@ -1,37 +1,69 @@
-# import pandas as pd
-# from sklearn.model_selection import train_test_split
-# from sklearn.ensemble import RandomForestClassifier
-# from sklearn.preprocessing import StandardScaler
-# from sklearn.metrics import accuracy_score
-# import pickle
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, classification_report
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import Dense
+import pickle
+import os
 
-# # Chargement des données
-# file_path = "../data/DatasetmalwareExtrait.csv"
-# data = pd.read_csv(file_path)
+# Fixer les graines pour la reproductibilité
+np.random.seed(42)
+tf.random.set_seed(42)
 
-# # Normalisation
-# columns_to_normalize = ['AddressOfEntryPoint', 'ResourceSize', 'SizeOfStackReserve']
-# scaler = StandardScaler()
-# data[columns_to_normalize] = scaler.fit_transform(data[columns_to_normalize])
+# Charger les données
+file_path = "DatasetmalwareExtrait.csv"
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"Le fichier {file_path} est introuvable.")
 
-# # Séparation en X et y
-# X = data.drop('legitimate', axis=1)
-# y = data['legitimate']
+data = pd.read_csv(file_path)
 
-# # Division des données
-# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Vérification des colonnes nécessaires
+required_columns = ['AddressOfEntryPoint', 'ResourceSize', 'SizeOfStackReserve', 'legitimate']
+missing_columns = [col for col in required_columns if col not in data.columns]
+if missing_columns:
+    raise ValueError(f"Les colonnes suivantes sont manquantes : {missing_columns}")
 
-# # Entraînement du modèle
-# model = RandomForestClassifier(random_state=42)
-# model.fit(X_train, y_train)
+# Gestion des valeurs manquantes
+if data.isnull().sum().any():
+    print("Des valeurs manquantes ont été détectées. Elles seront supprimées.")
+    data = data.dropna()
 
-# # Évaluation
-# y_pred = model.predict(X_test)
-# accuracy = accuracy_score(y_test, y_pred)
-# print(f"Précision sur le jeu de test : {accuracy:.2f}")
+# Normalisation des colonnes
+columns_to_normalize = ['AddressOfEntryPoint', 'ResourceSize', 'SizeOfStackReserve']
+scaler = StandardScaler()
+data[columns_to_normalize] = scaler.fit_transform(data[columns_to_normalize])
 
-# # Sauvegarde du modèle
-# model_path = "../models/malware_model.pkl"
-# with open(model_path, 'wb') as file:
-#     pickle.dump(model, file)
-# print(f"Modèle sauvegardé à : {model_path}")
+# Séparation des données en X (features) et y (cible)
+X = data.drop('legitimate', axis=1)
+y = data['legitimate']
+
+# Division des données en ensembles d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Construction du modèle Keras
+model = Sequential([
+    Dense(64, activation='relu', input_dim=X_train.shape[1]),
+    Dense(32, activation='relu'),
+    Dense(1, activation='sigmoid')
+])
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Entraînement du modèle
+history = model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.2, verbose=1)
+
+# Évaluation sur les données de test
+y_pred = (model.predict(X_test) > 0.5).astype(int)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Précision sur les données de test : {accuracy:.2f}")
+print("Rapport de classification :")
+print(classification_report(y_test, y_pred))
+
+# Sauvegarder le modèle et le scaler
+model.save("model_keras.h5")
+with open("scaler.pkl", "wb") as scaler_file:
+    pickle.dump(scaler, scaler_file)
+
+print("✅ Modèle et scaler sauvegardés avec succès.")

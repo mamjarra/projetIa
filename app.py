@@ -1,14 +1,36 @@
 import streamlit as st
 import pickle
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+import os
+import tensorflow as tf
 
-# Charger le modèle
-with open("model.pkl", "rb") as file:
-    model = pickle.load(file)
+# ✅ Chargement du modèle avec gestion des exceptions
+model_path = "model_augmented_keras.h5"
+scaler_path = "scaler_augmented.pkl"
 
-# Interface utilisateur
-st.title("Détection de Malware")
-st.sidebar.header("Entrez les caractéristiques")
+try:
+    if not os.path.exists(model_path):
+        raise FileNotFoundError("❌ Le fichier 'model_augmented_keras.h5' est introuvable.")
+    model = tf.keras.models.load_model(model_path)
+except Exception as e:
+    st.error(f"❌ Erreur lors du chargement du modèle : {e}")
+    st.stop()
+
+try:
+    if not os.path.exists(scaler_path):
+        raise FileNotFoundError("❌ Le fichier 'scaler_augmented.pkl' est introuvable.")
+    with open(scaler_path, 'rb') as file:
+        scaler = pickle.load(file)
+except Exception as e:
+    st.error(f"❌ Erreur lors du chargement du scaler : {e}")
+    st.stop()
+
+# ✅ Interface utilisateur
+st.title("🔍 Détection de Malware")
+st.sidebar.header("🛠️ Entrez les caractéristiques")
+st.sidebar.info("Remplissez les champs suivants pour prédire si le fichier est légitime ou malveillant.")
 
 def user_input():
     AddressOfEntryPoint = st.sidebar.number_input('AddressOfEntryPoint', min_value=0, max_value=1000000, value=10407)
@@ -30,10 +52,37 @@ def user_input():
         "ResourceSize": ResourceSize
     }])
 
+# ✅ Données d'entrée utilisateur
 input_data = user_input()
-if st.button("Prédire"):
-    prediction = model.predict(input_data)
-    if prediction[0] == 1:
-        st.success("Légitime")
-    else:
-        st.error("Malveillant")
+
+# ✅ Vérification des colonnes avant normalisation
+columns_to_normalize = ['AddressOfEntryPoint', 'ResourceSize', 'SizeOfStackReserve']
+for col in columns_to_normalize:
+    if col not in input_data.columns:
+        st.error(f"⚠️ La colonne '{col}' est manquante dans les données saisies.")
+        st.stop()
+
+# ✅ Normalisation avec le scaler pré-entrainé
+try:
+    input_data[columns_to_normalize] = scaler.transform(input_data[columns_to_normalize])
+except Exception as e:
+    st.error(f"⚠️ Erreur lors de la normalisation : {e}")
+    st.stop()
+
+# ✅ Prédiction
+if st.button("🔮 Prédire"):
+    try:
+        prediction = model.predict(input_data)
+        if isinstance(prediction, (np.ndarray, list)):
+            prediction = prediction[0]
+        if prediction >= 0.5:
+            st.success("✅ **Le fichier est LÉGITIME**")
+        else:
+            st.error("❌ **Le fichier est MALVEILLANT**")
+        st.write("### 📝 **Données saisies :**")
+        st.dataframe(input_data)
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la prédiction : {e}")
+        st.stop()
+
+st.write("🔗 **Fin de l'analyse. Merci d'avoir utilisé l'application !**")
